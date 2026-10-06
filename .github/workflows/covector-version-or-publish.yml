@@ -61,7 +61,7 @@ jobs:
         with:
           components: rust-src
       - env:
-          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib"
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/x86_64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           pip install cargo-zigbuild
@@ -87,7 +87,7 @@ jobs:
         with:
           components: rust-src
       - env:
-          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib"
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/aarch64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           pip install cargo-zigbuild
