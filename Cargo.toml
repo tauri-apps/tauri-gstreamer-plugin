@@ -6,7 +6,6 @@ license = "MIT OR Apache-2.0"
 edition = "2024"
 repository = "https://github.com/tauri-apps/tauri-gstreamer-plugin"
 description = "Gstreamer plugin for Tauri's asset protocol"
-rust-version = "1.92"
 
 [dependencies]
 gstreamer = "0.25"
