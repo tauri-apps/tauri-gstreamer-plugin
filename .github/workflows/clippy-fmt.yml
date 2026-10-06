@@ -22,6 +22,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - name: Install GStreamer dependencies
+        run: sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - run: cargo clippy --release --all-targets --all-features -- -D warnings
 
   rustfmt:
@@ -31,6 +33,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Install GStreamer dependencies
-        run: sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - run: cargo fmt --all -- --check
