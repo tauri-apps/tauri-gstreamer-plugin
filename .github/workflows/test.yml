@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install GStreamer dependencies
+        run: sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - run: cargo test
 
   # This mirrors the publish command
