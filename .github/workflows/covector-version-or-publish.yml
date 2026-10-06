@@ -71,6 +71,8 @@ jobs:
             --target x86_64-unknown-linux-gnu.2.17 --release
       
       - name: upload lib to release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node .github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/x86_64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-x86_64.so
@@ -97,6 +99,8 @@ jobs:
             --target aarch64-unknown-linux-gnu.2.17 --release
 
       - name: upload lib to release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node .github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/aarch64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-aarch64.so
