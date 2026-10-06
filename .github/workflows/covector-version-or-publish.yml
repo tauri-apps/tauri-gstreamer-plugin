@@ -53,7 +53,7 @@ jobs:
   publish-size-optimized-x64:
     needs: version-or-publish
     runs-on: ubuntu-24.04
-    if: ${{needs.version-or-publish.outputs.successfulPublish == 'true'}}
+    if: ${{ needs.version-or-publish.outputs.successfulPublish == 'true' && needs.version-or-publish.outputs.packagesPublished != '' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -82,7 +82,7 @@ jobs:
   publish-size-optimized-arm64:
     needs: version-or-publish
     runs-on: ubuntu-24.04-arm
-    if: ${{needs.version-or-publish.outputs.successfulPublish == 'true'}}
+    if: ${{ needs.version-or-publish.outputs.successfulPublish == 'true' && needs.version-or-publish.outputs.packagesPublished != '' }}
 
     steps:
       - uses: actions/checkout@v7
