@@ -15,10 +15,10 @@ glib::wrapper! {
 }
 
 pub fn register(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
-  gst::Element::register(
-    Some(plugin),
-    "tauriasset",
-    gst::Rank::PRIMARY,
-    TauriAsset::static_type(),
-  )
+    gst::Element::register(
+        Some(plugin),
+        "tauriasset",
+        gst::Rank::PRIMARY,
+        TauriAsset::static_type(),
+    )
 }

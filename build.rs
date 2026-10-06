@@ -3,5 +3,5 @@
 // SPDX-License-Identifier: MIT
 
 fn main() {
-  gst_plugin_version_helper::info();
+    gst_plugin_version_helper::info();
 }
