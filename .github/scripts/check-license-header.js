@@ -36,13 +36,11 @@ async function checkFile(file) {
     let contents = ``
     let i = 0
     for await (let line of rl) {
-      // ignore empty lines, allow shebang and bundler license
+      // ignore empty lines and allow shebang
       if (
         line.length === 0
         || line.startsWith('#!')
         || line.startsWith('// swift-tools-version:')
-        || line === bundlerLicense
-        || line === denoLicense
       ) {
         continue
       }
