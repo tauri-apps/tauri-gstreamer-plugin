@@ -1,0 +1,24 @@
+// Copyright 2026-2026 Tauri Programme within The Commons Conservancy
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
+
+use gst::glib;
+use gst::prelude::*;
+use gstreamer as gst;
+
+mod imp;
+
+glib::wrapper! {
+    pub struct TauriAsset(ObjectSubclass<imp::TauriAsset>)
+    @extends gst::Bin, gst::Element, gst::Object,
+    @implements gst::URIHandler;
+}
+
+pub fn register(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
+  gst::Element::register(
+    Some(plugin),
+    "tauriasset",
+    gst::Rank::PRIMARY,
+    TauriAsset::static_type(),
+  )
+}

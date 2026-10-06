@@ -1,0 +1,71 @@
+# Copyright 2026-2026 Tauri Programme within The Commons Conservancy
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
+
+name: test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  RUST_BACKTRACE: 1
+
+concurrency:
+   group: ${{ github.workflow }}-${{ github.ref }}
+   cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - run: cargo test
+
+  # This mirrors the publish command
+  build-size-optimized-x64:
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_x86_64
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        components: build-std
+      - env:
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none"
+        run: |
+          cargo +nightly build \
+            -Z build-std=std,panic_abort \
+            -Z build-std-features="optimize_for_size" \
+            --target x86_64-unknown-linux-gnu --release
+      
+      - uses: actions/upload-artifact@v7
+        with:
+          name: x64
+          path: target/x86_64-unknown-linux-gnu/release/libgst_plugin_tauri.so
+
+  # This mirrors the publish command
+  build-size-optimized-arm64:
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_aarch64
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        components: build-std
+      - env:
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none"
+        run: |
+          cargo +nightly build \
+            -Z build-std=std,panic_abort \
+            -Z build-std-features="optimize_for_size" \
+            --target aarch64-unknown-linux-gnu --release
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arm64
+          path: target/aarch64-unknown-linux-gnu/release/libgst_plugin_tauri.so
