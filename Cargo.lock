@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "gst-plugin-tauri"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "gst-plugin-version-helper",
  "gstreamer",

@@ -16,7 +16,7 @@ gst::plugin_define!(
   env!("CARGO_PKG_DESCRIPTION"),
   plugin_init,
   concat!(env!("CARGO_PKG_VERSION"), "-", env!("COMMIT_ID")),
-  "MIT/X11", // Not quite what we want, but only a few hard coded strings are allowed: https://gstreamer.freedesktop.org/documentation/gstreamer/gstplugin.html?gi-language=c#GstPluginDesc
+  "MIT/X11", // Not quite what we want, but only a few hard-coded strings are allowed: https://gstreamer.freedesktop.org/documentation/gstreamer/gstplugin.html?gi-language=c#GstPluginDesc
   env!("CARGO_PKG_NAME"),
   env!("CARGO_PKG_NAME"),
   env!("CARGO_PKG_REPOSITORY"),
