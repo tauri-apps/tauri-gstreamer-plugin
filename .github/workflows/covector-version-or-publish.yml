@@ -60,7 +60,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-      - env:
+      - name: Build library for x64
+        env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/x86_64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -76,7 +77,7 @@ jobs:
         run: |
           VERSION=$(node .github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/x86_64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-x86_64.so
-          gh release upload "$VERSION" target/x86_64-unknown-linux-gnu/release/libgsttauriasset-x86_64.so --clobber
+          gh release upload "$VERSION" libgsttauriasset-x86_64.so --clobber
 
   publish-size-optimized-arm64:
     needs: version-or-publish
@@ -88,7 +89,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-      - env:
+      - name: Build library for ARM64
+        env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/aarch64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -104,4 +106,4 @@ jobs:
         run: |
           VERSION=$(node .github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/aarch64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-aarch64.so
-          gh release upload "$VERSION" target/aarch64-unknown-linux-gnu/release/libgsttauriasset-aarch64.so --clobber
+          gh release upload "$VERSION" libgsttauriasset-aarch64.so --clobber

@@ -37,7 +37,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-      - env:
+      - name: Build library for x64
+        env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/x86_64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -61,7 +62,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-      - env:
+      - name: Build library for ARM64
+        env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/aarch64-linux-gnu/"
         run: |
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
