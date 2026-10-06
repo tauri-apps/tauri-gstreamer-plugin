@@ -1,0 +1,103 @@
+# Copyright 2026-2026 Tauri Programme within The Commons Conservancy
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
+
+name: version or publish
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  version-or-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    outputs:
+      change: ${{ steps.covector.outputs.change }}
+      commandRan: ${{ steps.covector.outputs.commandRan }}
+      successfulPublish: ${{ steps.covector.outputs.successfulPublish }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+
+      - name: git config
+        run: |
+          git config --global user.name "${{ github.event.pusher.name }}"
+          git config --global user.email "${{ github.event.pusher.email }}"
+
+      - name: covector version or publish (publish when no change files present)
+        uses: jbolda/covector/packages/action@covector-v0
+        id: covector
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          command: 'version-or-publish'
+          createRelease: true
+          recognizeContributors: true
+
+      - name: Create Pull Request With Versions Bumped
+        if: steps.covector.outputs.commandRan == 'version'
+        uses: peter-evans/create-pull-request@8.1.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ci/version-updates
+          title: Apply Version Updates From Current Changes
+          commit-message: 'apply version updates'
+          body: ${{ steps.covector.outputs.change }}
+          sign-commits: true
+
+  publish-size-optimized-x64:
+    needs: version-or-publish
+    runs-on: ubuntu-24.04
+    if: ${{needs.version-or-publish.outputs.successfulPublish == 'true'}}
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - env:
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/x86_64-linux-gnu/"
+        run: |
+          sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          pip install cargo-zigbuild
+          cargo +nightly zigbuild \
+            -Z build-std=std,panic_abort \
+            -Z build-std-features="optimize_for_size" \
+            --target x86_64-unknown-linux-gnu.2.17 --release
+      
+      - name: upload lib to release
+        run: |
+          VERSION=$(node ../../.github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
+          mv target/x86_64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-x86_64.so
+          gh release upload "$VERSION" target/x86_64-unknown-linux-gnu/release/libgsttauriasset-x86_64.so --clobber
+
+  publish-size-optimized-arm64:
+    needs: version-or-publish
+    runs-on: ubuntu-24.04-arm
+    if: ${{needs.version-or-publish.outputs.successfulPublish == 'true'}}
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - env:
+          RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/aarch64-linux-gnu/"
+        run: |
+          sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          pip install cargo-zigbuild
+          cargo +nightly zigbuild \
+            -Z build-std=std,panic_abort \
+            -Z build-std-features="optimize_for_size" \
+            --target aarch64-unknown-linux-gnu.2.17 --release
+
+      - name: upload lib to release
+        run: |
+          VERSION=$(node ../../.github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
+          mv target/aarch64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-aarch64.so
+          gh release upload "$VERSION" target/aarch64-unknown-linux-gnu/release/libgsttauriasset-aarch64.so --clobber

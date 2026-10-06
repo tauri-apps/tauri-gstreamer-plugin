@@ -1,0 +1,31 @@
+[package]
+name = "gst-plugin-tauri"
+version = "0.0.0"
+authors = ["Tauri Programme within The Commons Conservancy"]
+license = "MIT OR Apache-2.0"
+edition = "2024"
+repository = "https://github.com/tauri-apps/tauri-gstreamer-plugin"
+description = "Gstreamer plugin for Tauri's asset protocol"
+
+[dependencies]
+gstreamer = "0.25"
+percent-encoding = "2.3.2"
+
+[lib]
+name = "gsttauriasset"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[build-dependencies]
+gst-plugin-version-helper = "0.8.4"
+
+[dev-dependencies]
+gstreamer-check = "0.25"
+gstreamer-audio = "0.25"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+panic = 'abort'
+strip = true
