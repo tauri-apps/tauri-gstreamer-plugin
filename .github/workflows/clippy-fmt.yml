@@ -31,4 +31,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Install GStreamer dependencies
+        run: sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - run: cargo fmt --all -- --check
