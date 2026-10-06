@@ -10,11 +10,6 @@
           "command": "echo 'publish started. libraries will be built in other workflow jobs.'",
           "dryRunCommand": true
         }
-      ],
-      "postpublish": [
-        "git tag ${ pkg.pkg }-v${ pkgFile.versionMajor } -f",
-        "git tag ${ pkg.pkg }-v${ pkgFile.versionMajor }.${ pkgFile.versionMinor } -f",
-        "git push --tags -f"
       ]
     }
   },
