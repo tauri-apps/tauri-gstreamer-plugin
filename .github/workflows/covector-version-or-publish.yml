@@ -73,7 +73,7 @@ jobs:
         run: |
           VERSION=$(node ../../.github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/x86_64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-x86_64.so
-          gh release upload ${{ needs.version-or-publish.outputs.change }} target/x86_64-unknown-linux-gnu/release/libgsttauriasset-x86_64.so --clobber
+          gh release upload "$VERSION" target/x86_64-unknown-linux-gnu/release/libgsttauriasset-x86_64.so --clobber
 
   publish-size-optimized-arm64:
     needs: version-or-publish
@@ -98,5 +98,4 @@ jobs:
         run: |
           VERSION=$(node ../../.github/scripts/get-latest-version.js tauri-gstreamer-plugin 0.0.0)
           mv target/aarch64-unknown-linux-gnu/release/libgsttauriasset.so libgsttauriasset-aarch64.so
-          gh release upload ${{ needs.version-or-publish.outputs.change }} target/aarch64-unknown-linux-gnu/release/libgsttauriasset-aarch64.so --clobber
-
+          gh release upload "$VERSION" target/aarch64-unknown-linux-gnu/release/libgsttauriasset-aarch64.so --clobber
