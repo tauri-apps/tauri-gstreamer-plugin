@@ -8,6 +8,14 @@ use gstreamer as gst;
 mod tauri_asset;
 
 fn plugin_init(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
+    // The element is registered for the URI schemes the app lists in this
+    // variable, so the registry cache must not outlive a change to it.
+    plugin.add_dependency_simple(
+        Some(tauri_asset::PROTOCOLS_ENV_VAR),
+        None,
+        None,
+        gst::PluginDependencyFlags::empty(),
+    );
     tauri_asset::register(plugin)
 }
 

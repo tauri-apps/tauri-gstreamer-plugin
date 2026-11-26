@@ -8,6 +8,8 @@ use gstreamer as gst;
 
 mod imp;
 
+pub use imp::PROTOCOLS_ENV_VAR;
+
 glib::wrapper! {
     pub struct TauriAsset(ObjectSubclass<imp::TauriAsset>)
     @extends gstreamer_base::BaseSrc, gst::Element, gst::Object,
