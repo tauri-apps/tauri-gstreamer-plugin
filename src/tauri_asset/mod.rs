@@ -10,7 +10,7 @@ mod imp;
 
 glib::wrapper! {
     pub struct TauriAsset(ObjectSubclass<imp::TauriAsset>)
-    @extends gst::Bin, gst::Element, gst::Object,
+    @extends gstreamer_base::BaseSrc, gst::Element, gst::Object,
     @implements gst::URIHandler;
 }
 
