@@ -9,6 +9,7 @@ description = "Gstreamer plugin for Tauri's asset protocol"
 
 [dependencies]
 gstreamer = "0.25"
+gstreamer-base = "0.25"
 percent-encoding = "2.3.2"
 
 [lib]

@@ -226,6 +226,7 @@ dependencies = [
  "gst-plugin-version-helper",
  "gstreamer",
  "gstreamer-audio",
+ "gstreamer-base",
  "gstreamer-check",
  "percent-encoding",
 ]
