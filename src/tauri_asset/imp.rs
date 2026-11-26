@@ -44,20 +44,31 @@ const BLOCK_SIZE: u32 = 64 * 1024;
 /// the plugin is scanned.
 fn protocols() -> &'static [&'static str] {
     static PROTOCOLS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
-        let protocols = std::env::var(PROTOCOLS_ENV_VAR)
-            .unwrap_or_default()
-            .split(',')
-            .map(|protocol| protocol.trim().to_ascii_lowercase())
-            .filter(|protocol| !protocol.is_empty())
+        parse_protocols(&std::env::var(PROTOCOLS_ENV_VAR).unwrap_or_default())
+            .into_iter()
             .map(|protocol| &*protocol.leak())
-            .collect::<Vec<_>>();
-        if protocols.is_empty() {
-            DEFAULT_PROTOCOLS.to_vec()
-        } else {
-            protocols
-        }
+            .collect()
     });
     &PROTOCOLS
+}
+
+/// Parses the comma separated list of schemes, falling back to the default ones.
+fn parse_protocols(list: &str) -> Vec<String> {
+    let mut protocols = Vec::new();
+    for protocol in list.split(',') {
+        let protocol = protocol.trim().to_ascii_lowercase();
+        if !protocol.is_empty() && !protocols.contains(&protocol) {
+            protocols.push(protocol);
+        }
+    }
+    if protocols.is_empty() {
+        protocols.extend(
+            DEFAULT_PROTOCOLS
+                .iter()
+                .map(|protocol| protocol.to_string()),
+        );
+    }
+    protocols
 }
 
 #[derive(Default)]
@@ -106,6 +117,19 @@ fn open(uri: &str) -> Result<(UnixStream, Option<u64>), gst::ErrorMessage> {
         )
     })?;
 
+    let mut stream = UnixStream::connect(&socket).map_err(|err| {
+        gst::error_msg!(
+            gst::ResourceError::OpenRead,
+            ["Could not connect to the app to request {uri}: {err}"]
+        )
+    })?;
+    let size = request(&mut stream, uri)?;
+
+    Ok((stream, size))
+}
+
+/// Asks the app for `uri` and returns the size of the resource, when the app knows it.
+fn request(stream: &mut UnixStream, uri: &str) -> Result<Option<u64>, gst::ErrorMessage> {
     let io_error = |err: io::Error| {
         gst::error_msg!(
             gst::ResourceError::OpenRead,
@@ -113,7 +137,6 @@ fn open(uri: &str) -> Result<(UnixStream, Option<u64>), gst::ErrorMessage> {
         )
     };
 
-    let mut stream = UnixStream::connect(&socket).map_err(io_error)?;
     let mut request = Vec::with_capacity(4 + uri.len());
     request.extend_from_slice(&(uri.len() as u32).to_le_bytes());
     request.extend_from_slice(uri.as_bytes());
@@ -123,18 +146,23 @@ fn open(uri: &str) -> Result<(UnixStream, Option<u64>), gst::ErrorMessage> {
     stream.read_exact(&mut response).map_err(io_error)?;
     let value = u64::from_le_bytes(response[1..].try_into().unwrap());
     if response[0] != 0 {
-        let code = match value {
-            404 => gst::ResourceError::NotFound,
-            401 | 403 => gst::ResourceError::NotAuthorized,
-            _ => gst::ResourceError::OpenRead,
-        };
+        let code = refusal_error(value);
         return Err(gst::error_msg!(
             code,
             ["The app answered {uri} with status {value}"]
         ));
     }
 
-    Ok((stream, (value != UNKNOWN_SIZE).then_some(value)))
+    Ok((value != UNKNOWN_SIZE).then_some(value))
+}
+
+/// The error to fail with for the HTTP status the app refused a URI with.
+fn refusal_error(status: u64) -> gst::ResourceError {
+    match status {
+        404 => gst::ResourceError::NotFound,
+        401 | 403 => gst::ResourceError::NotAuthorized,
+        _ => gst::ResourceError::OpenRead,
+    }
 }
 
 /// Reads up to `data.len()` bytes at `offset`, less only at the end of the resource.
@@ -314,5 +342,184 @@ impl URIHandlerImpl for TauriAsset {
         state.uri = Some(uri.to_string());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs `app` on the other end of a socket pair, standing in for the Tauri app.
+    fn with_app<T>(
+        app: impl FnOnce(UnixStream) + Send + 'static,
+        client: impl FnOnce(&mut UnixStream) -> T,
+    ) -> T {
+        let (mut ours, theirs) = UnixStream::pair().unwrap();
+        let app = std::thread::spawn(move || app(theirs));
+        let result = client(&mut ours);
+        drop(ours);
+        app.join().unwrap();
+        result
+    }
+
+    fn read_request(stream: &mut UnixStream) -> Option<(u64, u32)> {
+        let mut request = [0; 12];
+        stream.read_exact(&mut request).ok()?;
+        Some((
+            u64::from_le_bytes(request[..8].try_into().unwrap()),
+            u32::from_le_bytes(request[8..].try_into().unwrap()),
+        ))
+    }
+
+    /// Answers reads from `data`, at most `max` bytes at a time.
+    fn serve(mut stream: UnixStream, data: &[u8], max: usize) {
+        while let Some((offset, len)) = read_request(&mut stream) {
+            let rest = data.get(offset as usize..).unwrap_or_default();
+            let chunk = &rest[..rest.len().min(len as usize).min(max)];
+            stream
+                .write_all(&(chunk.len() as u32).to_le_bytes())
+                .unwrap();
+            stream.write_all(chunk).unwrap();
+        }
+    }
+
+    fn respond(stream: &mut UnixStream, status: u8, value: u64) -> String {
+        let mut len = [0; 4];
+        stream.read_exact(&mut len).unwrap();
+        let mut uri = vec![0; u32::from_le_bytes(len) as usize];
+        stream.read_exact(&mut uri).unwrap();
+        stream.write_all(&[status]).unwrap();
+        stream.write_all(&value.to_le_bytes()).unwrap();
+        String::from_utf8(uri).unwrap()
+    }
+
+    #[test]
+    fn protocols_default_when_unset() {
+        assert_eq!(parse_protocols(""), ["asset", "tauri"]);
+        assert_eq!(parse_protocols(" , ,"), ["asset", "tauri"]);
+    }
+
+    #[test]
+    fn protocols_are_trimmed_lowercased_and_unique() {
+        assert_eq!(
+            parse_protocols("tauri, Asset ,stream,,TAURI"),
+            ["tauri", "asset", "stream"]
+        );
+    }
+
+    #[test]
+    fn request_sends_the_uri_and_returns_the_size() {
+        let uri = "asset://localhost/%2Ftmp%2Fa%20b.mp3";
+        let (tx, rx) = std::sync::mpsc::channel();
+        let size = with_app(
+            move |mut stream| tx.send(respond(&mut stream, 0, 1234)).unwrap(),
+            |stream| request(stream, uri),
+        );
+        assert_eq!(size.unwrap(), Some(1234));
+        assert_eq!(rx.recv().unwrap(), uri);
+    }
+
+    #[test]
+    fn request_accepts_an_unknown_size() {
+        let size = with_app(
+            |mut stream| {
+                respond(&mut stream, 0, UNKNOWN_SIZE);
+            },
+            |stream| request(stream, "tauri://localhost/a.mp3"),
+        );
+        assert_eq!(size.unwrap(), None);
+    }
+
+    #[test]
+    fn request_fails_when_the_app_refuses_the_uri() {
+        let result = with_app(
+            |mut stream| {
+                respond(&mut stream, 1, 403);
+            },
+            |stream| request(stream, "asset://localhost/a.mp3"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn refusals_map_to_resource_errors() {
+        assert_eq!(refusal_error(404), gst::ResourceError::NotFound);
+        assert_eq!(refusal_error(403), gst::ResourceError::NotAuthorized);
+        assert_eq!(refusal_error(401), gst::ResourceError::NotAuthorized);
+        assert_eq!(refusal_error(500), gst::ResourceError::OpenRead);
+    }
+
+    #[test]
+    fn request_fails_when_the_app_hangs_up() {
+        let result = with_app(drop, |stream| request(stream, "asset://localhost/a.mp3"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_at_asks_again_until_the_buffer_is_full() {
+        let data: Vec<u8> = (0..=255).cycle().take(10_000).collect();
+        let expected = data.clone();
+        let (read, buffer) = with_app(
+            move |stream| serve(stream, &data, 300),
+            |stream| {
+                let mut buffer = vec![0; 4096];
+                (read_at(stream, 1000, &mut buffer), buffer)
+            },
+        );
+        assert_eq!(read.unwrap(), 4096);
+        assert_eq!(buffer, expected[1000..5096]);
+    }
+
+    #[test]
+    fn read_at_returns_less_at_the_end() {
+        let (read, buffer) = with_app(
+            |stream| serve(stream, b"0123456789", usize::MAX),
+            |stream| {
+                let mut buffer = vec![0; 8];
+                (read_at(stream, 6, &mut buffer), buffer)
+            },
+        );
+        assert_eq!(read.unwrap(), 4);
+        assert_eq!(&buffer[..4], b"6789");
+    }
+
+    #[test]
+    fn read_at_past_the_end_reads_nothing() {
+        let read = with_app(
+            |stream| serve(stream, b"0123456789", usize::MAX),
+            |stream| read_at(stream, 50, &mut [0; 8]),
+        );
+        assert_eq!(read.unwrap(), 0);
+    }
+
+    #[test]
+    fn read_at_reports_a_failed_read() {
+        let read = with_app(
+            |mut stream| {
+                read_request(&mut stream);
+                stream.write_all(&READ_FAILED.to_le_bytes()).unwrap();
+            },
+            |stream| read_at(stream, 0, &mut [0; 8]),
+        );
+        assert!(read.is_err());
+    }
+
+    #[test]
+    fn read_at_rejects_more_than_it_asked_for() {
+        let read = with_app(
+            |mut stream| {
+                read_request(&mut stream);
+                stream.write_all(&100u32.to_le_bytes()).unwrap();
+                let _ = stream.write_all(&[0; 100]);
+            },
+            |stream| read_at(stream, 0, &mut [0; 8]),
+        );
+        assert_eq!(read.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn read_at_fails_when_the_app_hangs_up() {
+        let read = with_app(drop, |stream| read_at(stream, 0, &mut [0; 8]));
+        assert!(read.is_err());
     }
 }
