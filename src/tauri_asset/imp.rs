@@ -12,6 +12,7 @@ use gst_base::prelude::*;
 use gst_base::subclass::prelude::*;
 use gstreamer as gst;
 use gstreamer_base as gst_base;
+use percent_encoding::{AsciiSet, CONTROLS};
 
 // for debugging
 // GST_DEBUG=tauri_asset:5 <your-binary-using-the-plugin>
@@ -25,11 +26,70 @@ static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
 
 const ASSET_URI_SCHEME: &str = "asset";
 
+/// Characters percent-encoded when turning the location back into a URI.
+const PATH_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
+
 #[derive(Default)]
 struct State {
     location: Option<String>,
-    /// The open file and the offset its cursor is at, while the element is started.
-    file: Option<(File, u64)>,
+    /// The open file, while the element is started.
+    file: Option<OpenFile>,
+}
+
+struct OpenFile {
+    file: File,
+    /// Offset the file cursor is at, `None` when unknown (after an error).
+    position: Option<u64>,
+    /// Only known for regular files, which are also the only seekable ones.
+    size: Option<u64>,
+}
+
+impl OpenFile {
+    /// Fills `data` from `offset`, returning how many bytes were read.
+    ///
+    /// Only stops short at the end of the file, downstream expects full blocks.
+    fn read_at(&mut self, offset: u64, data: &mut [u8]) -> Result<usize, gst::ErrorMessage> {
+        if self.position != Some(offset) {
+            self.position = None;
+            self.file.seek(SeekFrom::Start(offset)).map_err(|err| {
+                gst::error_msg!(
+                    gst::ResourceError::Seek,
+                    ["Failed to seek to {offset}: {err}"]
+                )
+            })?;
+            self.position = Some(offset);
+        }
+
+        let mut read = 0;
+        while read < data.len() {
+            match self.file.read(&mut data[read..]) {
+                Ok(0) => break,
+                Ok(n) => {
+                    read += n;
+                    self.position = Some(offset + read as u64);
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(err) => {
+                    self.position = None;
+                    return Err(gst::error_msg!(
+                        gst::ResourceError::Read,
+                        ["Failed to read at {}: {err}", offset + read as u64]
+                    ));
+                }
+            }
+        }
+        Ok(read)
+    }
 }
 
 /// Source element reading the file an `asset://` URI points to.
@@ -96,13 +156,14 @@ impl ElementImpl for TauriAsset {
 
 impl BaseSrcImpl for TauriAsset {
     fn is_seekable(&self) -> bool {
-        true
+        self.state()
+            .file
+            .as_ref()
+            .is_some_and(|file| file.size.is_some())
     }
 
     fn size(&self) -> Option<u64> {
-        let state = self.state();
-        let (file, _) = state.file.as_ref()?;
-        file.metadata().ok().map(|metadata| metadata.len())
+        self.state().file.as_ref()?.size
     }
 
     fn start(&self) -> Result<(), gst::ErrorMessage> {
@@ -119,15 +180,29 @@ impl BaseSrcImpl for TauriAsset {
             };
             gst::error_msg!(code, ["Could not open file {location} for reading: {err}"])
         })?;
-        if file.metadata().is_ok_and(|metadata| metadata.is_dir()) {
+        let metadata = file.metadata().map_err(|err| {
+            gst::error_msg!(
+                gst::ResourceError::OpenRead,
+                ["Could not read metadata of {location}: {err}"]
+            )
+        })?;
+        if metadata.is_dir() {
             return Err(gst::error_msg!(
                 gst::ResourceError::OpenRead,
                 ["{location} is a directory"]
             ));
         }
 
-        gst::debug!(CAT, imp = self, "Opened {location}");
-        state.file = Some((file, 0));
+        // FIFOs, devices and procfs/sysfs entries report a length of 0 and cannot
+        // seek, so only regular files get a size (and with it seekability).
+        let size = metadata.file_type().is_file().then_some(metadata.len());
+
+        gst::debug!(CAT, imp = self, "Opened {location}, size {size:?}");
+        state.file = Some(OpenFile {
+            file,
+            position: Some(0),
+            size,
+        });
 
         Ok(())
     }
@@ -144,22 +219,10 @@ impl BaseSrcImpl for TauriAsset {
         buffer: &mut gst::BufferRef,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
         let mut state = self.state();
-        let Some((file, position)) = state.file.as_mut() else {
+        let Some(file) = state.file.as_mut() else {
             gst::element_imp_error!(self, gst::CoreError::Failed, ["Not started yet"]);
             return Err(gst::FlowError::Error);
         };
-
-        if *position != offset {
-            file.seek(SeekFrom::Start(offset)).map_err(|err| {
-                gst::element_imp_error!(
-                    self,
-                    gst::ResourceError::Seek,
-                    ["Failed to seek to {offset}: {err}"]
-                );
-                gst::FlowError::Error
-            })?;
-            *position = offset;
-        }
 
         let wanted = buffer.size();
         let read = {
@@ -167,29 +230,12 @@ impl BaseSrcImpl for TauriAsset {
                 gst::element_imp_error!(self, gst::CoreError::Failed, ["Failed to map buffer"]);
                 gst::FlowError::Error
             })?;
-            let data = map.as_mut_slice();
-
-            // Downstream expects full blocks until the end of the file.
-            let mut read = 0;
-            while read < data.len() {
-                match file.read(&mut data[read..]) {
-                    Ok(0) => break,
-                    Ok(n) => read += n,
-                    Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(err) => {
-                        gst::element_imp_error!(
-                            self,
-                            gst::ResourceError::Read,
-                            ["Failed to read at {offset}: {err}"]
-                        );
-                        return Err(gst::FlowError::Error);
-                    }
-                }
-            }
-            read
+            file.read_at(offset, map.as_mut_slice()).map_err(|msg| {
+                self.post_error_message(msg);
+                gst::FlowError::Error
+            })?
         };
 
-        *position += read as u64;
         if read == 0 && wanted > 0 {
             return Err(gst::FlowError::Eos);
         }
@@ -207,34 +253,38 @@ impl URIHandlerImpl for TauriAsset {
     }
 
     fn uri(&self) -> Option<String> {
-        self.state()
-            .location
-            .as_ref()
-            .map(|location| format!("{ASSET_URI_SCHEME}://{location}"))
+        self.state().location.as_ref().map(|location| {
+            let location = percent_encoding::utf8_percent_encode(location, PATH_ENCODE_SET);
+            format!("{ASSET_URI_SCHEME}://{location}")
+        })
     }
 
     fn set_uri(&self, uri: &str) -> Result<(), glib::Error> {
-        // uri is like: asset://path/to/asset or asset://localhost/path/to/asset
-        let sep = format!("{}://", ASSET_URI_SCHEME);
-        let mut split = uri.split(sep.as_str());
-        let location = split.nth(1).filter(|l| !l.is_empty()).ok_or_else(|| {
-            let msg = format!("URI does not contain location: {}", uri);
+        let bad_uri = |msg: String| {
             gst::error!(CAT, imp = self, "{msg}");
             glib::Error::new(gst::URIError::BadUri, &msg)
-        })?;
+        };
 
-        // directly having full path after asset:// or having localhost
-        let location = location.strip_prefix("localhost").unwrap_or(location);
+        // uri is like: asset://path/to/asset or asset://localhost/path/to/asset
+        let location = uri
+            .strip_prefix(ASSET_URI_SCHEME)
+            .and_then(|rest| rest.strip_prefix("://"))
+            .ok_or_else(|| bad_uri(format!("Not an {ASSET_URI_SCHEME} URI: {uri}")))?;
+
+        // directly having full path after asset:// or having localhost as the host
+        let location = match location.strip_prefix("localhost") {
+            Some(path) if path.is_empty() || path.starts_with('/') => path,
+            _ => location,
+        };
 
         // Uri could be percent-encoded
         let location = percent_encoding::percent_decode_str(location)
             .decode_utf8()
-            .map_err(|_| {
-                let msg = format!("Failed to decode percent-encoded URI: {}", uri);
-                gst::error!(CAT, imp = self, "{msg}");
-                glib::Error::new(gst::URIError::BadUri, &msg)
-            })?
-            .to_string();
+            .map_err(|_| bad_uri(format!("Failed to decode percent-encoded URI: {uri}")))?
+            .into_owned();
+        if location.is_empty() {
+            return Err(bad_uri(format!("URI does not contain location: {uri}")));
+        }
 
         let mut state = self.state();
         if state.file.is_some() {
