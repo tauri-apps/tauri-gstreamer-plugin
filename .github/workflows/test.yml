@@ -41,6 +41,7 @@ jobs:
         env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/x86_64-linux-gnu/"
         run: |
+          sudo apt-get update
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           pip install cargo-zigbuild
           cargo +nightly zigbuild \
@@ -66,6 +67,7 @@ jobs:
         env:
           RUSTFLAGS: "-Zlocation-detail=none -Zfmt-debug=none -L /usr/lib/aarch64-linux-gnu/"
         run: |
+          sudo apt-get update
           sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           pip install cargo-zigbuild
           cargo +nightly zigbuild \
